@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FORMScope — AI Workout Coach</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0a0c0f;--surf:#12161c;--surf2:#1a2030;--border:#1e2a3a;
+  --acc:#f0c040;--acc2:#e05a20;--green:#22d67a;--red:#f04060;--blue:#4090f0;
+  --txt:#f0eff0;--muted:#6a7a8a;
+  --bb:'Bebas Neue',cursive;--mn:'Manrope',sans-serif;--mo:'DM Mono',monospace;
+}
+body{background:var(--bg);color:var(--txt);font-family:var(--mn);height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+
+/* HEADER */
+.hdr{background:var(--surf);border-bottom:2px solid var(--acc);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:56px;flex-shrink:0;}
+.brand{font-family:var(--bb);font-size:26px;letter-spacing:2px;color:var(--acc);}
+.brand span{color:var(--txt);}
+.hdr-center{display:flex;gap:12px;align-items:center;}
+.conn-pill{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:4px;font-family:var(--mo);font-size:11px;border:1px solid var(--border);}
+.conn-pill.connected{border-color:var(--green);color:var(--green);background:rgba(34,214,122,.08);}
+.conn-pill.disconnected{border-color:var(--red);color:var(--red);background:rgba(240,64,96,.08);}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
+.dot.pulse{animation:dp 1.4s infinite;}
+@keyframes dp{0%,100%{opacity:1;}50%{opacity:.3;}}
+.hdr-right{display:flex;align-items:center;gap:16px;}
+.elapsed{font-family:var(--mo);font-size:13px;color:var(--muted);}
+.ex-badge{font-family:var(--bb);font-size:18px;color:var(--acc);letter-spacing:1px;}
+
+/* LAYOUT */
+.app{display:grid;grid-template-columns:200px 1fr 250px;flex:1;overflow:hidden;}
+
+/* LEFT */
+.lsb{background:var(--surf);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.section-label{font-family:var(--mo);font-size:9px;letter-spacing:3px;color:var(--muted);padding:14px 14px 8px;text-transform:uppercase;}
+.ex-list{display:flex;flex-direction:column;gap:4px;padding:0 10px 10px;}
+.ex-btn{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:7px;cursor:pointer;border:1px solid transparent;transition:all .2s;background:none;color:var(--txt);width:100%;text-align:left;}
+.ex-btn:hover{background:var(--surf2);}
+.ex-btn.active{background:var(--acc);color:#000;border-color:var(--acc);}
+.ex-btn .ex-icon{font-size:16px;}
+.ex-btn .ex-name{font-family:var(--bb);font-size:15px;letter-spacing:1px;}
+.ex-btn .ex-key{font-size:10px;font-family:var(--mo);opacity:.6;margin-left:auto;}
+
+/* STATS GRID */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px;}
+.stat{background:var(--surf2);border:1px solid var(--border);border-radius:7px;padding:9px 10px;}
+.stat-val{font-family:var(--bb);font-size:26px;line-height:1;}
+.stat-val.green{color:var(--green);}
+.stat-val.red{color:var(--red);}
+.stat-val.acc{color:var(--acc);}
+.stat-lbl{font-size:9px;color:var(--muted);font-family:var(--mo);margin-top:2px;}
+
+/* PROGRESS */
+.prog-section{padding:0 12px 10px;border-top:1px solid var(--border);}
+.prog-item{margin-bottom:8px;}
+.prog-row{display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px;}
+.prog-row span:first-child{color:var(--muted);}
+.prog-row span:last-child{font-family:var(--mo);color:var(--acc);}
+.prog-track{height:5px;background:var(--surf2);border-radius:3px;overflow:hidden;}
+.prog-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--acc2),var(--acc));transition:width .4s ease;}
+
+/* MAIN */
+.main{display:flex;flex-direction:column;background:#060810;overflow:hidden;position:relative;}
+
+/* VIDEO FEED */
+.video-wrap{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+#live-feed{width:100%;height:100%;object-fit:cover;display:block;}
+.no-feed{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:10px;font-family:var(--mo);font-size:12px;}
+.no-feed-icon{font-size:40px;opacity:.3;}
+
+/* FEEDBACK BANNER */
+.feedback-bar{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:10;pointer-events:none;min-width:280px;}
+.fb-inner{background:rgba(6,8,16,.88);border:2px solid var(--green);border-radius:10px;padding:9px 18px;text-align:center;backdrop-filter:blur(4px);}
+.fb-inner.bad{border-color:var(--red);}
+.fb-inner.neutral{border-color:var(--acc);}
+.fb-main{font-family:var(--bb);font-size:20px;letter-spacing:1px;color:var(--green);}
+.fb-inner.bad .fb-main{color:var(--red);}
+.fb-inner.neutral .fb-main{color:var(--acc);}
+.fb-sub{font-size:10px;color:var(--muted);margin-top:2px;font-family:var(--mn);}
+
+/* ANGLES STRIP */
+.angles-strip{background:var(--surf);border-top:1px solid var(--border);padding:8px 14px;display:flex;gap:14px;align-items:center;flex-shrink:0;}
+.angle-item{display:flex;flex-direction:column;align-items:center;gap:2px;}
+.angle-canvas{display:block;}
+.angle-name{font-size:9px;color:var(--muted);font-family:var(--mo);letter-spacing:1px;text-align:center;}
+.angle-val{font-family:var(--bb);font-size:11px;text-align:center;}
+
+/* CONTROLS strip */
+.controls-strip{background:var(--surf);border-top:1px solid var(--border);padding:8px 14px;display:flex;gap:8px;flex-shrink:0;}
+.ctrl{flex:1;padding:7px;border-radius:6px;font-family:var(--mo);font-size:11px;cursor:pointer;border:1px solid var(--border);background:var(--surf2);color:var(--txt);transition:all .18s;}
+.ctrl:hover{border-color:var(--acc);color:var(--acc);}
+.ctrl.primary{background:var(--acc);color:#000;border-color:var(--acc);font-weight:700;}
+.ctrl.danger{background:rgba(240,64,96,.1);color:var(--red);border-color:rgba(240,64,96,.3);}
+.ctrl:disabled{opacity:.4;cursor:not-allowed;}
+
+/* RIGHT */
+.rsb{background:var(--surf);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.rsb-sec{padding:12px;border-bottom:1px solid var(--border);}
+.rsb-title{font-family:var(--mo);font-size:9px;letter-spacing:3px;color:var(--muted);text-transform:uppercase;margin-bottom:10px;}
+
+/* REP RING */
+.rep-wrap{display:flex;justify-content:center;padding:4px 0 8px;}
+.rep-ring{position:relative;width:90px;height:90px;}
+.rep-ring svg{position:absolute;inset:0;}
+.rep-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.rep-num{font-family:var(--bb);font-size:38px;line-height:1;color:var(--acc);}
+.rep-goal{font-size:10px;color:var(--muted);font-family:var(--mo);}
+
+/* SCORE */
+.score-bar-wrap{margin-bottom:8px;}
+.score-bar{height:10px;background:var(--surf2);border-radius:5px;overflow:hidden;margin-bottom:6px;}
+.score-fill{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--acc2),var(--green));transition:width .5s ease;}
+.score-row{display:flex;justify-content:space-between;font-size:11px;margin-bottom:5px;}
+.score-row span:first-child{color:var(--muted);}
+.score-row span:last-child{font-family:var(--mo);font-weight:600;}
+
+/* LOG */
+.log-list{flex:1;overflow-y:auto;padding:8px 10px;}
+.log-list::-webkit-scrollbar{width:2px;}
+.log-list::-webkit-scrollbar-thumb{background:var(--border);}
+.log-entry{display:flex;gap:6px;padding:5px 0;border-bottom:1px solid rgba(30,42,58,.5);animation:fu .25s ease;}
+@keyframes fu{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:none;}}
+.log-ic{font-size:13px;min-width:16px;}
+.log-txt{font-size:11px;line-height:1.45;flex:1;}
+.log-txt.ok{color:var(--green);}
+.log-txt.warn{color:var(--red);}
+.log-txt.info{color:var(--blue);}
+.log-txt.tip{color:var(--acc);}
+.log-time{font-family:var(--mo);font-size:9px;color:var(--muted);white-space:nowrap;padding-top:2px;}
+
+/* PHASE indicator */
+.phase-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:4px;font-family:var(--mo);font-size:10px;border:1px solid var(--border);}
+.phase-pill.down{border-color:var(--acc2);color:var(--acc2);}
+.phase-pill.up{border-color:var(--green);color:var(--green);}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="hdr">
+  <div class="brand">FORM<span>Scope</span></div>
+  <div class="hdr-center">
+    <div class="conn-pill disconnected" id="conn-pill">
+      <span class="dot" id="conn-dot"></span>
+      <span id="conn-label">Connecting…</span>
+    </div>
+    <div class="ex-badge" id="hdr-exercise">—</div>
+    <div class="phase-pill" id="phase-pill">READY</div>
+  </div>
+  <div class="hdr-right">
+    <div class="elapsed" id="elapsed">00:00</div>
+  </div>
+</header>
+
+<div class="app">
+
+<!-- LEFT SIDEBAR -->
+<aside class="lsb">
+  <div class="section-label">Exercises</div>
+  <div class="ex-list">
+    <button class="ex-btn" data-ex="squat"  onclick="switchEx('squat')">
+      <span class="ex-icon">🏋</span>
+      <span class="ex-name">Squat</span>
+      <span class="ex-key">[1]</span>
+    </button>
+    <button class="ex-btn" data-ex="pushup" onclick="switchEx('pushup')">
+      <span class="ex-icon">💪</span>
+      <span class="ex-name">Push-up</span>
+      <span class="ex-key">[2]</span>
+    </button>
+    <button class="ex-btn" data-ex="plank"  onclick="switchEx('plank')">
+      <span class="ex-icon">⚡</span>
+      <span class="ex-name">Plank</span>
+      <span class="ex-key">[3]</span>
+    </button>
+    <button class="ex-btn" data-ex="lunge"  onclick="switchEx('lunge')">
+      <span class="ex-icon">🦵</span>
+      <span class="ex-name">Lunge</span>
+      <span class="ex-key">[4]</span>
+    </button>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat"><div class="stat-val green" id="s-reps">0</div><div class="stat-lbl">Total Reps</div></div>
+    <div class="stat"><div class="stat-val acc"   id="s-acc">—%</div><div class="stat-lbl">Accuracy</div></div>
+    <div class="stat"><div class="stat-val"       id="s-sets">0</div><div class="stat-lbl">Sets Done</div></div>
+    <div class="stat"><div class="stat-val red"   id="s-errors">0</div><div class="stat-lbl">Warnings</div></div>
+  </div>
+
+  <div class="section-label">Progress</div>
+  <div class="prog-section">
+    <div class="prog-item">
+      <div class="prog-row"><span>Squat</span><span id="pg-squat-t">0/12</span></div>
+      <div class="prog-track"><div class="prog-fill" id="pg-squat" style="width:0%"></div></div>
+    </div>
+    <div class="prog-item">
+      <div class="prog-row"><span>Push-up</span><span id="pg-pushup-t">0/10</span></div>
+      <div class="prog-track"><div class="prog-fill" id="pg-pushup" style="width:0%"></div></div>
+    </div>
+    <div class="prog-item">
+      <div class="prog-row"><span>Plank</span><span id="pg-plank-t">0/60s</span></div>
+      <div class="prog-track"><div class="prog-fill" id="pg-plank" style="width:0%"></div></div>
+    </div>
+    <div class="prog-item">
+      <div class="prog-row"><span>Lunge</span><span id="pg-lunge-t">0/10</span></div>
+      <div class="prog-track"><div class="prog-fill" id="pg-lunge" style="width:0%"></div></div>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN PANEL -->
+<main class="main">
+  <div class="video-wrap">
+    <img id="live-feed" src="/video" alt="Live pose feed"
+         onerror="this.style.display='none';document.getElementById('no-feed').style.display='flex'">
+    <div class="no-feed" id="no-feed" style="display:none">
+      <div class="no-feed-icon">📷</div>
+      <div>Waiting for video stream…</div>
+      <div style="font-size:10px;opacity:.6">Make sure the Python app is running</div>
+    </div>
+
+    <!-- Feedback banner overlaid on video -->
+    <div class="feedback-bar">
+      <div class="fb-inner neutral" id="fb-inner">
+        <div class="fb-main" id="fb-main">CONNECTING…</div>
+        <div class="fb-sub"  id="fb-sub">Starting Python backend</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Angle gauges -->
+  <div class="angles-strip" id="angles-strip"></div>
+
+  <!-- Controls -->
+  <div class="controls-strip">
+    <button class="ctrl primary" id="btn-pause" onclick="sendCmd('pause')">⏸ Pause</button>
+    <button class="ctrl"         onclick="sendCmd('reset')">↺ Reset Reps</button>
+    <button class="ctrl danger"  onclick="confirmEnd()">■ End Session</button>
+  </div>
+</main>
+
+<!-- RIGHT SIDEBAR -->
+<aside class="rsb">
+  <!-- Rep ring -->
+  <div class="rsb-sec">
+    <div class="rsb-title">Reps This Set</div>
+    <div class="rep-wrap">
+      <div class="rep-ring">
+        <svg viewBox="0 0 90 90" width="90" height="90">
+          <circle cx="45" cy="45" r="38" fill="none" stroke="var(--surf2)" stroke-width="7"/>
+          <circle cx="45" cy="45" r="38" fill="none" stroke="var(--acc)" stroke-width="7"
+            stroke-linecap="round"
+            stroke-dasharray="238.76" stroke-dashoffset="238.76"
+            transform="rotate(-90 45 45)" id="rep-arc"/>
+        </svg>
+        <div class="rep-center">
+          <div class="rep-num"  id="rep-num">0</div>
+          <div class="rep-goal" id="rep-goal">/ 12</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Form score -->
+  <div class="rsb-sec">
+    <div class="rsb-title">Form Score</div>
+    <div class="score-bar-wrap">
+      <div class="score-bar"><div class="score-fill" id="score-fill" style="width:0%"></div></div>
+    </div>
+    <div id="score-breakdown"></div>
+  </div>
+
+  <!-- Log -->
+  <div class="rsb-title" style="padding:12px 12px 4px;">AI Coach Log</div>
+  <div class="log-list" id="log-list"></div>
+</aside>
+</div>
+
+<script>
+// ── WebSocket connection ───────────────────────────────────────────────────────
+const CIRC = 238.76;
+let ws = null;
+let warnCount = 0;
+let progress = {squat:0, pushup:0, plank:0, lunge:0};
+let goals     = {squat:12, pushup:10, plank:60, lunge:10};
+let lastEx    = null;
+let lastFeedback = "";
+let paused = false;
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    setConn(true);
+    log('🔗 Connected to FORMScope backend', 'info');
+  };
+
+  ws.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d._cmd) return; // internal command echo, ignore
+      updateDashboard(d);
+    } catch(err) {}
+  };
+
+  ws.onclose = () => {
+    setConn(false);
+    log('⚠ Connection lost. Reconnecting…', 'warn');
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+function setConn(ok) {
+  const pill  = document.getElementById('conn-pill');
+  const dot   = document.getElementById('conn-dot');
+  const label = document.getElementById('conn-label');
+  pill.className  = 'conn-pill ' + (ok ? 'connected' : 'disconnected');
+  dot.className   = 'dot' + (ok ? ' pulse' : '');
+  label.textContent = ok ? 'LIVE' : 'OFFLINE';
+}
+
+// ── State update ──────────────────────────────────────────────────────────────
+function updateDashboard(d) {
+  // Header
+  document.getElementById('hdr-exercise').textContent = d.exercise || '—';
+  document.getElementById('elapsed').textContent = d.elapsed || '00:00';
+
+  // Phase pill
+  const pp = document.getElementById('phase-pill');
+  pp.textContent = (d.phase || 'up').toUpperCase();
+  pp.className   = 'phase-pill ' + (d.phase === 'down' ? 'down' : 'up');
+
+  // Feedback banner
+  const fbInner = document.getElementById('fb-inner');
+  const fbMain  = document.getElementById('fb-main');
+  const fbSub   = document.getElementById('fb-sub');
+
+  if (d.paused) {
+    fbInner.className = 'fb-inner neutral';
+    fbMain.textContent = 'PAUSED';
+    fbSub.textContent  = 'Click Resume to continue';
+  } else if (!d.is_good && d.feedback !== lastFeedback) {
+    fbInner.className = 'fb-inner bad';
+    fbMain.textContent = '⚠ CORRECT FORM';
+    fbSub.textContent  = d.feedback;
+  } else {
+    fbInner.className = 'fb-inner';
+    fbMain.textContent = d.feedback || 'Analyzing…';
+    fbSub.textContent  = d.is_good ? 'Keep it up!' : '';
+  }
+  if (d.feedback && d.feedback !== lastFeedback) {
+    log(d.feedback, d.is_good ? 'ok' : 'warn');
+    if (!d.is_good) warnCount++;
+    lastFeedback = d.feedback;
+  }
+
+  // Exercise selector highlight
+  if (d.exercise_key && d.exercise_key !== lastEx) {
+    document.querySelectorAll('.ex-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.ex === d.exercise_key));
+    buildAnglesStrip(d.joints || [], d.angle_ranges || []);
+    goals[d.exercise_key] = d.goal_reps || 12;
+    lastEx = d.exercise_key;
+    document.getElementById('rep-goal').textContent =
+      `/ ${d.goal_reps}${d.is_timed ? 's' : ''}`;
+  }
+
+  // Stats
+  document.getElementById('s-reps').textContent  = d.total_reps ?? 0;
+  document.getElementById('s-sets').textContent  = d.sets ?? 0;
+  document.getElementById('s-acc').textContent   = d.form_score != null ? `${d.form_score}%` : '—%';
+  document.getElementById('s-errors').textContent = warnCount;
+
+  // Rep ring
+  const reps = d.reps ?? 0;
+  const goal = d.goal_reps ?? 12;
+  document.getElementById('rep-num').textContent = reps;
+  const pct = Math.min(reps / goal, 1);
+  document.getElementById('rep-arc').setAttribute(
+    'stroke-dashoffset', CIRC - CIRC * pct
+  );
+
+  // Progress bars
+  if (d.exercise_key) {
+    progress[d.exercise_key] = reps;
+    updateProgress();
+  }
+
+  // Form score
+  const score = d.form_score ?? 0;
+  document.getElementById('score-fill').style.width = score + '%';
+
+  // Score breakdown
+  const bd = document.getElementById('score-breakdown');
+  bd.innerHTML = '';
+  Object.entries(d.scores || {}).forEach(([k, v]) => {
+    const color = v >= 70 ? 'var(--green)' : v >= 50 ? 'var(--acc2)' : 'var(--red)';
+    bd.innerHTML += `
+      <div class="score-row">
+        <span>${k}</span>
+        <span style="color:${color}">${v}%</span>
+      </div>
+      <div class="score-bar" style="height:5px;margin-bottom:6px">
+        <div class="score-fill" style="width:${v}%;background:${color}"></div>
+      </div>`;
+  });
+
+  // Angle gauges
+  (d.angles || []).forEach((val, i) => {
+    const vEl = document.getElementById(`av-${i}`);
+    const cEl = document.getElementById(`ac-${i}`);
+    if (!vEl || !cEl) return;
+    const range = (d.angle_ranges || [])[i];
+    vEl.textContent = val + '°';
+    if (range) drawArc(cEl, val, range[0], range[1]);
+  });
+
+  // Pause button label
+  paused = d.paused;
+  document.getElementById('btn-pause').textContent = paused ? '▶ Resume' : '⏸ Pause';
+}
+
+// ── Angle arc strip ───────────────────────────────────────────────────────────
+function buildAnglesStrip(joints, ranges) {
+  const strip = document.getElementById('angles-strip');
+  strip.innerHTML = '';
+  joints.forEach((name, i) => {
+    const div = document.createElement('div');
+    div.className = 'angle-item';
+    div.innerHTML = `
+      <canvas class="angle-canvas" id="ac-${i}" width="50" height="50"></canvas>
+      <div class="angle-val" id="av-${i}">—°</div>
+      <div class="angle-name">${name}</div>`;
+    strip.appendChild(div);
+    if (ranges[i]) drawArc(div.querySelector('canvas'), 90, ranges[i][0], ranges[i][1]);
+  });
+}
+
+function drawArc(canvas, val, lo, hi) {
+  const g = canvas.getContext('2d');
+  g.clearRect(0, 0, 50, 50);
+  const inRange = val >= lo && val <= hi;
+  const color   = inRange ? '#22d67a' : '#f04060';
+  const total   = 180;
+  const pct     = Math.max(0, Math.min(1, val / total));
+
+  g.beginPath(); g.arc(25, 25, 19, 0, Math.PI*2);
+  g.strokeStyle = '#1a2030'; g.lineWidth = 5; g.stroke();
+
+  g.beginPath();
+  g.arc(25, 25, 19, -Math.PI/2, -Math.PI/2 + pct * Math.PI * 2);
+  g.strokeStyle = color; g.lineWidth = 5; g.lineCap = 'round'; g.stroke();
+
+  g.fillStyle = inRange ? 'rgba(34,214,122,.08)' : 'rgba(240,64,96,.08)';
+  g.beginPath(); g.arc(25, 25, 13, 0, Math.PI*2); g.fill();
+}
+
+// ── Progress bars ─────────────────────────────────────────────────────────────
+function updateProgress() {
+  const map = {squat:'squat',pushup:'pushup',plank:'plank',lunge:'lunge'};
+  const goalMap = {squat:12,pushup:10,plank:60,lunge:10};
+  const suffix  = {squat:'',pushup:'',plank:'s',lunge:''};
+  Object.keys(map).forEach(ex => {
+    const v = progress[ex] || 0;
+    const g = goalMap[ex];
+    const p = Math.min(Math.round(v/g*100), 100);
+    document.getElementById(`pg-${ex}`).style.width = p + '%';
+    document.getElementById(`pg-${ex}-t`).textContent = `${v}/${g}${suffix[ex]}`;
+  });
+}
+
+// ── Commands → Python backend ─────────────────────────────────────────────────
+function sendCmd(cmd, extra={}) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({cmd, ...extra}));
+}
+
+function switchEx(ex) {
+  sendCmd('switch', {exercise: ex});
+  // Optimistic UI update
+  document.querySelectorAll('.ex-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.ex === ex));
+}
+
+function confirmEnd() {
+  if (confirm('End this session?')) {
+    log('🏅 Session ended by user', 'info');
+    sendCmd('end');
+  }
+}
+
+// ── Log ───────────────────────────────────────────────────────────────────────
+const ICONS = {ok:'✓',warn:'⚠',info:'ℹ',tip:'💡'};
+function log(text, type='info') {
+  const list = document.getElementById('log-list');
+  const now  = new Date();
+  const t    = `${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+  const div  = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = `
+    <span class="log-ic">${ICONS[type]||'ℹ'}</span>
+    <span class="log-txt ${type}">${text}</span>
+    <span class="log-time">${t}</span>`;
+  list.prepend(div);
+  if (list.children.length > 50) list.lastChild.remove();
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (['1','2','3','4'].includes(e.key)) {
+    const map = {'1':'squat','2':'pushup','3':'plank','4':'lunge'};
+    switchEx(map[e.key]);
+  } else if (e.key === ' ') {
+    e.preventDefault();
+    sendCmd('pause');
+  } else if (e.key.toLowerCase() === 'r') {
+    sendCmd('reset');
+  }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+log('🤖 FORMScope dashboard loaded', 'info');
+log('Waiting for Python backend…', 'tip');
+connect();
+
+// Reload video feed if it errors (backend might not be ready yet)
+document.getElementById('live-feed').addEventListener('error', function() {
+  setTimeout(() => {
+    this.src = '/video?' + Date.now();
+    this.style.display = 'block';
+    document.getElementById('no-feed').style.display = 'none';
+  }, 2000);
+});
+</script>
+</body>
+</html>

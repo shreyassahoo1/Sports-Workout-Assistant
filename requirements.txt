@@ -1,0 +1,16 @@
+# FORMScope — AI Workout Form Correction System
+# Install: pip install -r requirements.txt
+
+# Core vision + pose estimation
+mediapipe>=0.10.9
+opencv-python>=4.9.0
+
+# Web server (dashboard + MJPEG + WebSocket)
+flask>=3.0.0
+flask-sock>=0.7.0
+
+# Text-to-speech (offline, cross-platform)
+pyttsx3>=2.90
+
+# Numerics
+numpy>=1.24.0
