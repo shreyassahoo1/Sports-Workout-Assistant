@@ -181,6 +181,11 @@ body{background:var(--bg);color:var(--txt);font-family:var(--mn);height:100vh;ov
       <span class="ex-name">Lunge</span>
       <span class="ex-key">[4]</span>
     </button>
+    <button class="ex-btn" data-ex="bicep"  onclick="switchEx('bicep')">
+      <span class="ex-icon">💪</span>
+      <span class="ex-name">Bicep Curl</span>
+      <span class="ex-key">[5]</span>
+    </button>
   </div>
 
   <div class="stats-grid">
@@ -207,6 +212,10 @@ body{background:var(--bg);color:var(--txt);font-family:var(--mn);height:100vh;ov
     <div class="prog-item">
       <div class="prog-row"><span>Lunge</span><span id="pg-lunge-t">0/10</span></div>
       <div class="prog-track"><div class="prog-fill" id="pg-lunge" style="width:0%"></div></div>
+    </div>
+    <div class="prog-item">
+      <div class="prog-row"><span>Bicep Curl</span><span id="pg-bicep-t">0/10</span></div>
+      <div class="prog-track"><div class="prog-fill" id="pg-bicep" style="width:0%"></div></div>
     </div>
   </div>
 </aside>
@@ -284,8 +293,8 @@ body{background:var(--bg);color:var(--txt);font-family:var(--mn);height:100vh;ov
 const CIRC = 238.76;
 let ws = null;
 let warnCount = 0;
-let progress = {squat:0, pushup:0, plank:0, lunge:0};
-let goals     = {squat:12, pushup:10, plank:60, lunge:10};
+let progress = {squat:0, pushup:0, plank:0, lunge:0, bicep:0};
+let goals     = {squat:12, pushup:10, plank:60, lunge:10, bicep:10};
 let lastEx    = null;
 let lastFeedback = "";
 let paused = false;
@@ -463,15 +472,16 @@ function drawArc(canvas, val, lo, hi) {
 
 // ── Progress bars ─────────────────────────────────────────────────────────────
 function updateProgress() {
-  const map = {squat:'squat',pushup:'pushup',plank:'plank',lunge:'lunge'};
-  const goalMap = {squat:12,pushup:10,plank:60,lunge:10};
-  const suffix  = {squat:'',pushup:'',plank:'s',lunge:''};
-  Object.keys(map).forEach(ex => {
-    const v = progress[ex] || 0;
-    const g = goalMap[ex];
-    const p = Math.min(Math.round(v/g*100), 100);
-    document.getElementById(`pg-${ex}`).style.width = p + '%';
-    document.getElementById(`pg-${ex}-t`).textContent = `${v}/${g}${suffix[ex]}`;
+  const goalMap = {squat:12, pushup:10, plank:60, lunge:10, bicep:10};
+  const suffix  = {squat:'', pushup:'', plank:'s', lunge:'', bicep:''};
+  Object.keys(goalMap).forEach(ex => {
+    const v   = progress[ex] || 0;
+    const g   = goalMap[ex];
+    const p   = Math.min(Math.round(v/g*100), 100);
+    const bar = document.getElementById(`pg-${ex}`);
+    const txt = document.getElementById(`pg-${ex}-t`);
+    if (bar) bar.style.width = p + '%';
+    if (txt) txt.textContent = `${v}/${g}${suffix[ex]}`;
   });
 }
 
@@ -513,8 +523,8 @@ function log(text, type='info') {
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
-  if (['1','2','3','4'].includes(e.key)) {
-    const map = {'1':'squat','2':'pushup','3':'plank','4':'lunge'};
+  if (['1','2','3','4','5'].includes(e.key)) {
+    const map = {'1':'squat','2':'pushup','3':'plank','4':'lunge','5':'bicep'};
     switchEx(map[e.key]);
   } else if (e.key === ' ') {
     e.preventDefault();

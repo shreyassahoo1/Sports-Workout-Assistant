@@ -1,19 +1,15 @@
 """
 server/app.py — Local web server for FORMScope dashboard.
 
-Two endpoints:
-  GET /              → serves dashboard.html
-  GET /video         → MJPEG stream of the annotated webcam feed
-  WS  /ws            → WebSocket: pushes JSON state every frame
+Endpoints:
+  GET /       → dashboard.html
+  GET /video  → MJPEG annotated webcam stream
+  WS  /ws     → JSON state pushed every frame; commands received from browser
 
-Architecture:
-  WorkoutSession runs on the main thread (OpenCV + MediaPipe).
-  Flask runs on a background thread.
-  A shared StateStore (thread-safe) is the bridge.
-
-  WorkoutSession  →  StateStore  →  Flask/WS  →  Browser
-       ↓                                ↑
-  MJPEG queue  ──────────────────────────
+Command flow (browser → Python):
+  Browser sends: {"cmd": "pause"} / {"cmd": "reset"} / {"cmd": "end"} / {"cmd": "switch", "exercise": "pushup"}
+  app.py puts command string onto a thread-safe queue (cmd_queue)
+  session.py drains that queue every frame — no race condition with state pushes
 """
 
 import json
@@ -21,7 +17,6 @@ import queue
 import threading
 import time
 import logging
-import os
 from typing import Optional
 
 from flask import Flask, Response, send_from_directory
@@ -30,34 +25,31 @@ from flask_sock import Sock
 logger = logging.getLogger(__name__)
 
 
-# ── Shared state between workout loop and web server ──────────────────────────
-
 class StateStore:
-    """Thread-safe store for the latest workout frame + state JSON."""
+    """Thread-safe store for latest workout state + MJPEG frames + command queue."""
 
     def __init__(self):
-        self._lock       = threading.Lock()
-        self._state: dict = {}
-        # Bounded queue for MJPEG frames; drop old frames if consumer is slow
-        self._frame_q: queue.Queue = queue.Queue(maxsize=4)
-        self._clients: list = []      # connected WebSocket clients
+        self._lock         = threading.Lock()
+        self._state: dict  = {}
+        self._frame_q      = queue.Queue(maxsize=4)
+        self._clients      = []
         self._clients_lock = threading.Lock()
+        # Commands from browser land here; session.py drains this every frame
+        self.cmd_queue     = queue.Queue()
 
-    # ── Called by WorkoutSession (producer) ──────────────────────────────────
+    # ── Producer: WorkoutSession ──────────────────────────────────────────────
 
     def push_frame(self, jpeg_bytes: bytes):
-        """Put an encoded JPEG frame into the MJPEG queue (non-blocking)."""
         try:
             self._frame_q.put_nowait(jpeg_bytes)
         except queue.Full:
             try:
-                self._frame_q.get_nowait()   # drop oldest
+                self._frame_q.get_nowait()
                 self._frame_q.put_nowait(jpeg_bytes)
             except queue.Empty:
                 pass
 
     def push_state(self, state: dict):
-        """Broadcast latest state JSON to all connected WebSocket clients."""
         with self._lock:
             self._state = state
         payload = json.dumps(state)
@@ -71,7 +63,7 @@ class StateStore:
             for ws in dead:
                 self._clients.remove(ws)
 
-    # ── Called by Flask (consumer) ────────────────────────────────────────────
+    # ── Consumer: Flask ───────────────────────────────────────────────────────
 
     def get_frame(self, timeout: float = 0.1) -> Optional[bytes]:
         try:
@@ -93,15 +85,11 @@ class StateStore:
                 self._clients.remove(ws)
 
 
-# ── Flask app factory ─────────────────────────────────────────────────────────
-
 def create_app(store: StateStore, static_folder: str) -> Flask:
-    app = Flask(__name__, static_folder=static_folder)
+    app  = Flask(__name__, static_folder=static_folder)
     sock = Sock(app)
 
-    # Silence Flask request logs (they'd spam the terminal)
-    log = logging.getLogger("werkzeug")
-    log.setLevel(logging.ERROR)
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
     @app.route("/")
     def index():
@@ -109,41 +97,35 @@ def create_app(store: StateStore, static_folder: str) -> Flask:
 
     @app.route("/video")
     def video_feed():
-        """MJPEG stream endpoint."""
         def generate():
             while True:
                 frame = store.get_frame(timeout=0.5)
                 if frame is None:
-                    # Send a keepalive boundary so the browser doesn't time out
                     continue
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n" +
-                    frame +
-                    b"\r\n"
+                    frame + b"\r\n"
                 )
-        return Response(
-            generate(),
-            mimetype="multipart/x-mixed-replace; boundary=frame",
-        )
+        return Response(generate(),
+                        mimetype="multipart/x-mixed-replace; boundary=frame")
 
     @sock.route("/ws")
     def websocket(ws):
-        """WebSocket: push state JSON each frame, handle exercise switch commands."""
         store.register_client(ws)
         try:
             while True:
-                # Block waiting for a message from the browser
-                # (exercise switch command: {"cmd":"switch","exercise":"pushup"})
                 try:
                     msg = ws.receive(timeout=30)
-                    if msg:
-                        data = json.loads(msg)
-                        if data.get("cmd") == "switch":
-                            store.push_state({
-                                **store.get_state(),
-                                "_cmd": f"switch:{data['exercise']}",
-                            })
+                    if not msg:
+                        continue
+                    data = json.loads(msg)
+                    cmd  = data.get("cmd", "")
+                    # Put command onto the queue — session.py reads it next frame
+                    if cmd == "switch":
+                        store.cmd_queue.put(f"switch:{data.get('exercise','squat')}")
+                    elif cmd in ("pause", "reset", "end"):
+                        store.cmd_queue.put(cmd)
                 except Exception:
                     break
         finally:
@@ -153,26 +135,23 @@ def create_app(store: StateStore, static_folder: str) -> Flask:
 
 
 class WebServer:
-    """Starts Flask in a daemon thread so the main loop isn't blocked."""
-
     def __init__(self, store: StateStore, static_folder: str,
                  host: str = "127.0.0.1", port: int = 5000):
-        self.store  = store
-        self.host   = host
-        self.port   = port
-        self._app   = create_app(store, static_folder)
+        self.store = store
+        self.host  = host
+        self.port  = port
+        self._app  = create_app(store, static_folder)
         self._thread: Optional[threading.Thread] = None
 
     def start(self):
         self._thread = threading.Thread(
             target=self._app.run,
             kwargs=dict(host=self.host, port=self.port,
-                        debug=False, use_reloader=False,
-                        threaded=True),
+                        debug=False, use_reloader=False, threaded=True),
             daemon=True,
             name="Flask-Server",
         )
         self._thread.start()
-        time.sleep(0.8)   # let Flask bind before we print the URL
+        time.sleep(0.8)
         print(f"\n  🌐  Dashboard → http://{self.host}:{self.port}")
         print(f"  📹  Video feed → http://{self.host}:{self.port}/video\n")

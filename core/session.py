@@ -103,23 +103,35 @@ class WorkoutSession:
                 if self.mirror and isinstance(self.source, int):
                     frame = cv2.flip(frame, 1)
 
-                # Poll for browser WS commands
+                # Drain browser command queue (populated by WebSocket handler)
                 if self.store:
-                    st  = self.store.get_state()
-                    cmd = st.get("_cmd", "")
-                    if cmd.startswith("switch:"):
-                        new_ex = cmd.split(":")[1]
-                        if new_ex in EXERCISE_REGISTRY and new_ex != self._exercise_key:
-                            self._switch_exercise(new_ex)
-                        self.store.push_state({**st, "_cmd": ""})
-                    if st.get("_pause"):
-                        self._paused = not self._paused
-                        self.store.push_state({**st, "_pause": False})
-                    if st.get("_reset"):
-                        self._exercise.reset_reps()
-                        if self._exercise.IS_TIMED:
-                            self._plank_last_tick = time.time()
-                        self.store.push_state({**st, "_reset": False})
+                    while not self.store.cmd_queue.empty():
+                        try:
+                            cmd = self.store.cmd_queue.get_nowait()
+                        except Exception:
+                            break
+
+                        if cmd.startswith("switch:"):
+                            new_ex = cmd.split(":")[1]
+                            if new_ex in EXERCISE_REGISTRY and new_ex != self._exercise_key:
+                                self._switch_exercise(new_ex)
+
+                        elif cmd == "pause":
+                            self._paused = not self._paused
+                            self.tts.say("Paused." if self._paused else "Resuming.")
+
+                        elif cmd == "reset":
+                            self._exercise.reset_reps()
+                            if self._exercise.IS_TIMED:
+                                self._plank_last_tick = time.time()
+                            self.tts.say("Reps reset.")
+
+                        elif cmd == "end":
+                            self._running = False
+                            break  # break inner while
+
+                    if not self._running:
+                        break  # break outer frame loop
 
                 if self.show_window:
                     key = cv2.waitKey(1) & 0xFF

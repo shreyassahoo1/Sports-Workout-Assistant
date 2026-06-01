@@ -395,12 +395,166 @@ class Lunge(BaseExercise):
         return False
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  BICEP CURL  — KNN model (lean detection) + angle rules
+# ═══════════════════════════════════════════════════════════════════════════════
+class BicepCurl(BaseExercise):
+    NAME        = "Bicep Curl"
+    GOAL_REPS   = 10
+    TARGET_SETS = 3
+
+    JOINTS = ["L. Elbow", "R. Elbow", "Upper Arm", "Torso"]
+    ANGLE_RANGES = [
+        (20,  160),   # elbow flexion full ROM
+        (20,  160),   # elbow right
+        (0,   40),    # upper-arm drift from vertical (loose arm check)
+        (0,   15),    # torso lean from vertical
+    ]
+
+    PRIMARY_CONNECTIONS = [
+        (MP.LEFT_SHOULDER,  MP.RIGHT_SHOULDER),
+        (MP.LEFT_SHOULDER,  MP.LEFT_ELBOW),
+        (MP.RIGHT_SHOULDER, MP.RIGHT_ELBOW),
+        (MP.LEFT_ELBOW,     MP.LEFT_WRIST),
+        (MP.RIGHT_ELBOW,    MP.RIGHT_WRIST),
+        (MP.LEFT_SHOULDER,  MP.LEFT_HIP),
+        (MP.RIGHT_SHOULDER, MP.RIGHT_HIP),
+    ]
+    PRIMARY_JOINTS = [
+        MP.LEFT_SHOULDER, MP.RIGHT_SHOULDER,
+        MP.LEFT_ELBOW,    MP.RIGHT_ELBOW,
+        MP.LEFT_WRIST,    MP.RIGHT_WRIST,
+        MP.LEFT_HIP,      MP.RIGHT_HIP,
+    ]
+
+    _knn          = None
+    _scaler       = None
+    _model_loaded = False
+
+    @classmethod
+    def _load_model(cls):
+        if cls._model_loaded:
+            return
+        import os, pickle, warnings
+        model_dir   = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "model")
+        )
+        knn_path    = os.path.join(model_dir, "KNN_model.pkl")
+        scaler_path = os.path.join(model_dir, "input_scaler.pkl")
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                with open(knn_path, "rb") as f:
+                    cls._knn = pickle.load(f)
+                with open(scaler_path, "rb") as f:
+                    cls._scaler = pickle.load(f)
+            print("  ✓ BicepCurl KNN model loaded.")
+        except Exception as e:
+            print(f"  ⚠ BicepCurl model not found ({e}). Using angle-only mode.")
+        cls._model_loaded = True
+
+    def __init__(self, tts=None):
+        super().__init__(tts)
+        self.__class__._load_model()
+        self._phase = "down"
+
+    def _compute_angles(self, lm) -> List[float]:
+        import math
+        le    = elbow_angle(lm, "left")
+        re    = elbow_angle(lm, "right")
+        ls_pt = (lm[MP.LEFT_SHOULDER].x, lm[MP.LEFT_SHOULDER].y)
+        le_pt = (lm[MP.LEFT_ELBOW].x,    lm[MP.LEFT_ELBOW].y)
+        dx    = le_pt[0] - ls_pt[0]
+        dy    = le_pt[1] - ls_pt[1]
+        upper_arm_drift = math.degrees(math.atan2(abs(dx), abs(dy) + 1e-6))
+        sp    = spine_angle(lm)
+        return [le, re, upper_arm_drift, sp]
+
+    def _landmarks_to_row(self, lm) -> list:
+        USED = [
+            MP.NOSE,
+            MP.LEFT_SHOULDER,  MP.RIGHT_SHOULDER,
+            MP.RIGHT_ELBOW,    MP.LEFT_ELBOW,
+            MP.RIGHT_WRIST,    MP.LEFT_WRIST,
+            MP.LEFT_HIP,       MP.RIGHT_HIP,
+        ]
+        row = []
+        for idx in USED:
+            p = lm[idx]
+            row.extend([p.x, p.y, p.z, p.visibility])
+        return row  # 9 × 4 = 36 features
+
+    def _check_form(self, lm, angles) -> Tuple[Dict, List[str], bool]:
+        le, re, upper_arm_drift, sp = angles
+        msgs    = []
+        is_good = True
+
+        # 1. Lean detection via KNN model
+        lean_error = False
+        if self._knn is not None and self._scaler is not None:
+            try:
+                import numpy as np, warnings
+                row    = self._landmarks_to_row(lm)
+                scaled = self._scaler.transform([row])
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    pred = self._knn.predict(scaled)[0]
+                if pred == "L":
+                    msgs.append("Don't lean back — keep torso upright.")
+                    lean_error = True
+                    is_good    = False
+            except Exception:
+                pass
+
+        # 2. Loose upper arm
+        if upper_arm_drift > 40:
+            msgs.append("Upper arm moving — pin elbows to your sides.")
+            is_good = False
+
+        # 3. Weak peak contraction
+        in_top = le < 70 or re < 70
+        if in_top:
+            if le > 60 and re > 60:
+                msgs.append("Curl higher — squeeze at the top!")
+                is_good = False
+            elif not msgs:
+                msgs.append("Good contraction at the top!")
+
+        # 4. Spine lean fallback (no model)
+        if not lean_error and sp > 18:
+            msgs.append("Torso leaning back — stay upright.")
+            is_good = False
+
+        if not msgs:
+            msgs.append("Great curl form!")
+
+        scores = {
+            "Elbow ROM":  self.score_from_angle(min(le, re), 20, 60, 25, 50),
+            "Upper Arm":  self.score_from_angle(upper_arm_drift, 0, 40, 0, 20),
+            "Torso":      self.score_from_angle(sp, 0, 15, 0, 8),
+            "Symmetry":   max(0.0, 100.0 - abs(le - re) * 2),
+        }
+        return scores, msgs, is_good
+
+    def _check_rep(self, angles) -> bool:
+        le = angles[0]
+        if self._phase == "down" and le < 70:
+            self._phase = "up"
+        elif self._phase == "up" and le > 140:
+            self._phase = "down"
+            self.state.phase = "up"
+            return True
+        self.state.phase = self._phase
+        return False
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 EXERCISE_REGISTRY = {
     "squat":  Squat,
     "pushup": PushUp,
     "plank":  Plank,
     "lunge":  Lunge,
+    "bicep":  BicepCurl,
 }
 
 EXERCISE_KEYS = {
@@ -408,6 +562,7 @@ EXERCISE_KEYS = {
     "2": "pushup",
     "3": "plank",
     "4": "lunge",
+    "5": "bicep",
 }
 
-EXERCISE_DISPLAY = ["Squat", "Push-up", "Plank", "Lunge"]
+EXERCISE_DISPLAY = ["Squat", "Push-up", "Plank", "Lunge", "Bicep Curl"]
