@@ -1,90 +1,73 @@
 """
-FORMScope — AI-Based Workout Form Correction System
-RV College of Engineering | ACY 2025-26
+FORMScope — main.py (web dashboard edition)
 
-Entry point. Run with:
-    python main.py                  # webcam mode (default)
-    python main.py --source video.mp4   # video file mode
-    python main.py --exercise pushup    # start on a specific exercise
-    python main.py --no-tts             # disable voice feedback
+Run:
+    python main.py                        # webcam, opens browser automatically
+    python main.py --source video.mp4     # video file
+    python main.py --exercise pushup      # start on push-ups
+    python main.py --no-tts               # disable voice
+    python main.py --debug                # also show local cv2 window
+    python main.py --port 5001            # use a different port
 """
 
 import argparse
+import os
 import sys
-from core.session import WorkoutSession
-
+import time
+import webbrowser
+import threading
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="FORMScope — AI Workout Form Correction System"
-    )
-    parser.add_argument(
-        "--source",
-        type=str,
-        default="0",
-        help="Video source: '0' for webcam, or path to a video file",
-    )
-    parser.add_argument(
-        "--exercise",
-        type=str,
-        default="squat",
-        choices=["squat", "pushup", "plank", "lunge"],
-        help="Starting exercise (default: squat)",
-    )
-    parser.add_argument(
-        "--no-tts",
-        action="store_true",
-        help="Disable text-to-speech audio feedback",
-    )
-    parser.add_argument(
-        "--mirror",
-        action="store_true",
-        default=True,
-        help="Mirror webcam feed horizontally (default: True)",
-    )
-    parser.add_argument(
-        "--save",
-        type=str,
-        default=None,
-        metavar="OUTPUT.mp4",
-        help="Save the annotated output to a video file",
-    )
-    return parser.parse_args()
+    p = argparse.ArgumentParser(description="FORMScope — AI Workout Form Correction")
+    p.add_argument("--source",   default="0",
+                   help="Video source: '0' for webcam, or path to video file")
+    p.add_argument("--exercise", default="squat",
+                   choices=["squat","pushup","plank","lunge"])
+    p.add_argument("--no-tts",   action="store_true", help="Disable TTS audio")
+    p.add_argument("--mirror",   action="store_true", default=True)
+    p.add_argument("--save",     default=None, metavar="OUT.mp4")
+    p.add_argument("--port",     type=int, default=5000)
+    p.add_argument("--host",     default="127.0.0.1")
+    p.add_argument("--debug",    action="store_true",
+                   help="Also show a local OpenCV window")
+    return p.parse_args()
 
 
 def main():
-    args = parse_args()
+    args   = parse_args()
+    source = int(args.source) if args.source.isdigit() else args.source
 
-    # Resolve source: int for webcam index, str for file path
-    source = args.source
-    if source.isdigit():
-        source = int(source)
+    # Locate the dashboard HTML (sits next to main.py)
+    static_dir = os.path.dirname(os.path.abspath(__file__))
 
-    print("\n╔══════════════════════════════════════════╗")
-    print("║       FORMScope — AI Workout Coach       ║")
-    print("╠══════════════════════════════════════════╣")
-    print(f"║  Source   : {'Webcam' if isinstance(source, int) else source:<29}║")
-    print(f"║  Exercise : {args.exercise:<29}║")
-    print(f"║  TTS      : {'Enabled' if not args.no_tts else 'Disabled':<29}║")
-    print(f"║  Mirror   : {str(args.mirror):<29}║")
-    print(f"║  Save     : {str(args.save or 'No'):<29}║")
-    print("╚══════════════════════════════════════════╝")
-    print("\nControls:")
-    print("  [SPACE]  Pause / Resume")
-    print("  [1]      Squat      [2] Push-up")
-    print("  [3]      Plank      [4] Lunge")
-    print("  [R]      Reset reps / sets")
-    print("  [S]      Save screenshot")
-    print("  [Q/ESC]  Quit\n")
+    from server.app import StateStore, WebServer
+    from core.session import WorkoutSession
+
+    store  = StateStore()
+    server = WebServer(store, static_folder=static_dir,
+                       host=args.host, port=args.port)
+    server.start()
+
+    # Open browser after a short delay
+    url = f"http://{args.host}:{args.port}"
+    threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+
+    print(f"\n  Press  Ctrl+C  to stop.\n")
 
     session = WorkoutSession(
-        source=source,
-        exercise=args.exercise,
-        tts_enabled=not args.no_tts,
-        mirror=args.mirror,
-        save_path=args.save,
+        source      = source,
+        exercise    = args.exercise,
+        tts_enabled = not args.no_tts,
+        mirror      = args.mirror,
+        save_path   = args.save,
+        store       = store,
+        show_window = args.debug,
     )
-    session.run()
+
+    try:
+        session.run()
+    except KeyboardInterrupt:
+        print("\n  Stopping…")
 
 
 if __name__ == "__main__":

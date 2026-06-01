@@ -1,5 +1,8 @@
 # FORMScope — AI-Based Workout Form Correction System
 
+**RV College of Engineering | Cluster: CS | ACY 2025-26**  
+**Team:** Sanath Reddy · Shreyas Sahoo · Samarjeet Sujeet Bhonsle (ISE)
+
 ---
 
 ## What it does

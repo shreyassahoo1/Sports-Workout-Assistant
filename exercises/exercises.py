@@ -409,3 +409,5 @@ EXERCISE_KEYS = {
     "3": "plank",
     "4": "lunge",
 }
+
+EXERCISE_DISPLAY = ["Squat", "Push-up", "Plank", "Lunge"]
